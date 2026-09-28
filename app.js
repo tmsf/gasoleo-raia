@@ -296,9 +296,18 @@ function loadLeaflet() {
   return leaflet;
 }
 
+// Apple devices get Apple Maps (opens the Maps app); everyone else Google Maps.
+// iPadOS reports itself as "Macintosh", so the Mac check also covers iPads.
+const IS_APPLE = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+function directionsUrl({ lat, lon }) {
+  return IS_APPLE
+    ? `https://maps.apple.com/directions?destination=${lat},${lon}&mode=driving`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+}
+
 async function openMap(station) {
   els.mapTitle.innerHTML = `<b>${esc(station.name)}</b> <span>${station.price.toFixed(3).replace('.', ',')} €</span>`;
-  els.mapGo.href = `https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lon}`;
+  els.mapGo.href = directionsUrl(station);
   els.dlg.showModal();
   history.pushState({ map: true }, '');
 
