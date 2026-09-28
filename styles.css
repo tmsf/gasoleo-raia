@@ -356,3 +356,6 @@ main { max-width: 1200px; margin: 0 auto; padding: 8px var(--gutter) 24px; }
 .pin--es { border-color: #f1bf00; }
 .pin--sel { background: var(--accent); color: #1c1b18; font-size: 17px; padding: 5px 9px; border-color: #151412; }
 .pin--sel::after { border-color: #151412; }
+
+.foot__links { margin: 10px 0 0; line-height: 2; }
+.foot__links a { color: var(--ink); font-weight: 600; text-underline-offset: 3px; }
