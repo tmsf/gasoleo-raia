@@ -12,7 +12,11 @@ O browser guarda as respostas em localStorage durante 30 min, o que dá, no máx
     python3 -m http.server 8000   # depois abrir http://localhost:8000
 
 ## Publicar
-Qualquer alojamento estático serve. Por exemplo, GitHub Pages: fazer push desta pasta e ativar o Pages na raiz do branch.
+Qualquer alojamento estático serve. Em produção usa-se o Cloudflare Pages: sem framework, sem comando de build e com o diretório de saída `/`.
 
 ## Logótipos
 A pasta `logos/` contém PNGs de 120×120 retirados do favicon ou do logótipo do site de cada marca, ou da Wikimedia Commons. As marcas sem logótipo encontrado (p. ex. Guay, Gasolar) não mostram nenhum. Para acrescentar um, colocar o PNG na pasta e juntar uma regex em `LOGOS` no `app.js`.
+
+## Licença
+O código deste projeto é de domínio público, sob a [Unlicense](LICENSE).
+Os logótipos em `logos/` são marcas registadas dos respetivos titulares e não estão abrangidos por esta licença.
