@@ -29,6 +29,8 @@
 
     <div class="summary" id="summary" hidden></div>
 
+    <button class="saved" id="saved" type="button" hidden></button>
+
     <nav class="chips" id="chips" aria-label="Filtrar por país">
       <button type="button" data-f="all" class="chip">Todos</button>
       <button type="button" data-f="PT" class="chip"><i class="flag flag--pt"></i>Portugal</button>
@@ -54,17 +56,65 @@
   </footer>
 
   <dialog class="map-dlg" id="mapDlg">
-    <div class="map-dlg__bar">
-      <div class="map-dlg__title" id="mapTitle"></div>
-      <button class="icon-btn" type="button" id="mapClose" aria-label="Fechar mapa">
+    <div class="dlg__bar">
+      <div class="dlg__title" id="mapTitle"></div>
+      <button class="icon-btn" type="button" data-close aria-label="Fechar mapa">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
     <div class="map" id="map"></div>
-    <div class="map-dlg__actions">
+    <div class="dlg__actions">
       <a class="btn btn--primary" id="mapGo" target="_blank" rel="noopener">Como chegar</a>
     </div>
   </dialog>
+
+  <dialog class="sheet" id="fillDlg">
+    <form id="fillForm" novalidate>
+      <div class="dlg__bar">
+        <div class="dlg__title" id="fillTitle"></div>
+        <button class="icon-btn" type="button" data-close aria-label="Fechar">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet__body">
+        <div class="fields">
+          <label class="field"><span>Litros</span><input id="fillL" inputmode="decimal" autocomplete="off" enterkeyhint="done"></label>
+          <label class="field"><span>Valor (€)</span><input id="fillE" inputmode="decimal" autocomplete="off" enterkeyhint="done"></label>
+        </div>
+        <label class="field"><span>Preço pago (€/L)</span><input id="fillP" inputmode="decimal" autocomplete="off" enterkeyhint="done"></label>
+        <p class="fill-note" id="fillNote" aria-live="polite"></p>
+      </div>
+      <div class="dlg__actions">
+        <button class="btn btn--primary" type="submit" id="fillSubmit">Guardar abastecimento</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet sheet--tall" id="histDlg">
+    <div class="dlg__bar">
+      <div class="dlg__title"><b>Os meus abastecimentos</b></div>
+      <button class="icon-btn" type="button" data-close aria-label="Fechar">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet__body">
+      <div class="stats" id="histStats"></div>
+      <div class="table-wrap" id="histTable">
+        <table class="fills">
+          <thead><tr><th>Posto</th><th class="n">L</th><th class="n">PT</th><th class="n">ES</th><th class="n">Poupança</th><th><span class="sr">Apagar</span></th></tr></thead>
+          <tbody id="histRows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="histEmpty" hidden>Ainda sem abastecimentos.</p>
+      <p class="hint">A poupança compara o preço pago com o posto mais barato do outro lado da fronteira nesse momento. Os dados ficam apenas neste browser.</p>
+      <p class="hint" id="histHint" hidden>No Safari, os dados de sites não visitados durante 7 dias são apagados. Adicione o Gasóleo Raia ao ecrã principal ou exporte o CSV de vez em quando.</p>
+    </div>
+    <div class="dlg__actions">
+      <button class="btn" type="button" id="histCsv">Exportar CSV</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden><span></span><button type="button" id="toastUndo">Anular</button></div>
 
   <template id="cardTpl">
     <li class="card">
@@ -82,10 +132,16 @@
           <span class="drums"></span>
           <span class="sign__unit">€/L</span>
         </div>
-        <button type="button" class="btn map-btn">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
-          Mapa
-        </button>
+        <div class="card__actions">
+          <button type="button" class="btn map-btn">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+            Mapa
+          </button>
+          <button type="button" class="btn fill-btn" title="Registar um abastecimento neste posto">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M3 21h12M4 10h10M14 9h2a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V8l-3-3"/></svg>
+            Abasteci
+          </button>
+        </div>
       </div>
       <p class="meta"></p>
     </li>

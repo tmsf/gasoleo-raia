@@ -35,7 +35,12 @@ const $ = (s) => document.querySelector(s);
 const els = {
   list: $('#list'), empty: $('#empty'), fresh: $('#fresh'), summary: $('#summary'),
   chips: $('#chips'), refresh: $('#refresh'), tpl: $('#cardTpl'),
-  dlg: $('#mapDlg'), map: $('#map'), mapTitle: $('#mapTitle'), mapGo: $('#mapGo'), mapClose: $('#mapClose'),
+  dlg: $('#mapDlg'), map: $('#map'), mapTitle: $('#mapTitle'), mapGo: $('#mapGo'),
+  saved: $('#saved'), toast: $('#toast'), toastUndo: $('#toastUndo'),
+  fillDlg: $('#fillDlg'), fillForm: $('#fillForm'), fillTitle: $('#fillTitle'), fillNote: $('#fillNote'),
+  fillL: $('#fillL'), fillE: $('#fillE'), fillP: $('#fillP'), fillSubmit: $('#fillSubmit'),
+  histDlg: $('#histDlg'), histStats: $('#histStats'), histTable: $('#histTable'), histRows: $('#histRows'),
+  histEmpty: $('#histEmpty'), histHint: $('#histHint'), histCsv: $('#histCsv'),
 };
 
 const store = {
@@ -55,6 +60,9 @@ function titleCase(s = '') {
     .replace(/\b(Da|De|Do|Das|Dos|E|Del|La|El|Y)\b/g, (w) => w.toLowerCase())
     .replace(/^./, (c) => c.toUpperCase());
 }
+const dec = (n, d = 3) => n.toFixed(d).replace('.', ',');
+const plain = (n, d = 2) => String(+n.toFixed(d)).replace('.', ','); // 40 -> "40", 37.5 -> "37,5"
+const eur = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' });
 const brandName = (s) => (s.length <= 3 ? s.toUpperCase() : titleCase(s));
 
 function logoFor(...names) {
@@ -206,9 +214,10 @@ function renderFresh() {
     `<div class="fresh__fetched">Consultado ${ago(fetchedAt)}</div>`;
 }
 
+const cheapest = (cc) => state.stations.find((s) => s.country === cc);
+
 function renderSummary() {
-  const best = (cc) => state.stations.find((s) => s.country === cc);
-  const pt = best('PT'), es = best('ES');
+  const pt = cheapest('PT'), es = cheapest('ES');
   if (!pt || !es) { els.summary.hidden = true; return; }
   const [lo, hi] = pt.price <= es.price ? [pt, es] : [es, pt];
   const diff = hi.price - lo.price;
@@ -260,6 +269,7 @@ function render() {
     }
     li.querySelector('.meta').innerHTML = meta.join('');
     li.querySelector('.map-btn').addEventListener('click', () => openMap(s));
+    li.querySelector('.fill-btn').addEventListener('click', () => openFill(s));
     return li;
   }));
 
@@ -275,6 +285,32 @@ function render() {
 }
 
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/* ---------- dialogs ---------- */
+
+// Each open dialog gets a history entry, so the Android back button / swipe closes it instead of leaving the site.
+const dialogs = [els.dlg, els.fillDlg, els.histDlg];
+function openDlg(d) {
+  d.showModal();
+  history.pushState({ dlg: d.id }, '');
+}
+window.addEventListener('popstate', () => dialogs.forEach((d) => d.open && d.close()));
+dialogs.forEach((d) => {
+  d.addEventListener('click', (e) => { if (e.target === d) history.back(); });
+  d.addEventListener('cancel', (e) => { e.preventDefault(); history.back(); });
+});
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => history.back()));
+
+let toastTimer;
+function toast(msg, undo) {
+  // Inside an open modal, or the backdrop would cover it.
+  (dialogs.find((d) => d.open) || document.body).append(els.toast);
+  els.toast.firstElementChild.textContent = msg;
+  els.toastUndo.onclick = () => { undo(); els.toast.hidden = true; };
+  els.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { els.toast.hidden = true; }, 6000);
+}
 
 /* ---------- map ---------- */
 
@@ -308,8 +344,7 @@ function directionsUrl({ lat, lon }) {
 async function openMap(station) {
   els.mapTitle.innerHTML = `<b>${esc(station.name)}</b> <span>${station.price.toFixed(3).replace('.', ',')} €</span>`;
   els.mapGo.href = directionsUrl(station);
-  els.dlg.showModal();
-  history.pushState({ map: true }, '');
+  if (!els.dlg.open) openDlg(els.dlg);
 
   const L = await loadLeaflet();
   if (!map) {
@@ -337,12 +372,161 @@ async function openMap(station) {
   map.setView([station.lat, station.lon], 15);
 }
 
-function closeMap() { if (els.dlg.open) els.dlg.close(); }
-els.mapClose.addEventListener('click', () => history.back());
-els.dlg.addEventListener('click', (e) => { if (e.target === els.dlg) history.back(); });
-els.dlg.addEventListener('cancel', (e) => { e.preventDefault(); history.back(); });
-// Android back button / swipe closes the map instead of leaving the site.
-window.addEventListener('popstate', closeMap);
+/* ---------- fill-ups (stored only in this browser) ---------- */
+
+const FILLS_KEY = 'diesel-raia:fills';
+const LAST_FILL_KEY = 'diesel-raia:last-fill';
+const COUNTRY = { PT: 'Portugal', ES: 'Espanha' };
+const STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const fmtFill = new Intl.DateTimeFormat('pt-PT', { day: 'numeric', month: 'numeric', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+const fmtFillShort = new Intl.DateTimeFormat('pt-PT', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fillDate = (at) => (new Date(at).getFullYear() === new Date().getFullYear() ? fmtFillShort : fmtFill).format(at);
+
+let fills = store.get(FILLS_KEY) || [];
+let fill = null; // the fill-up being entered: { station, src } — src is the field the user typed, 'l' or 'e'
+
+function saveFills() {
+  fills.sort((a, b) => a.at - b.at);
+  store.set(FILLS_KEY, fills);
+  renderSaved();
+  if (els.histDlg.open) renderHistory();
+}
+
+// Fills in whichever of litres / amount the user didn't type. The saving compares the price paid
+// with the cheapest station across the border right now; null when that side has no prices.
+function quote() {
+  const s = fill.station;
+  const paid = num(els.fillP.value);
+  let litres = num(els.fillL.value), amount = num(els.fillE.value);
+  if (fill.src === 'l') { amount = litres * paid; els.fillE.value = amount > 0 ? plain(amount) : ''; }
+  else { litres = amount / paid; els.fillL.value = litres > 0 && isFinite(litres) ? plain(litres) : ''; }
+  const other = s.country === 'PT' ? 'ES' : 'PT';
+  const ref = cheapest(other)?.price ?? null;
+  const ok = paid > 0 && litres > 0 && isFinite(litres);
+  const saved = ok && ref ? Math.round((ref - paid) * litres * 100) / 100 : null;
+  return { ok, s, paid, litres, amount, other, ref, saved };
+}
+
+function renderQuote() {
+  const q = quote();
+  els.fillSubmit.disabled = !q.ok;
+  els.fillNote.classList.toggle('is-neg', q.saved < 0);
+  els.fillNote.innerHTML = !q.ok ? ''
+    : q.ref == null ? `Sem preços de ${COUNTRY[q.other]} para comparar.`
+    : q.saved >= 0 ? `Poupa <b>${eur.format(q.saved)}</b> face a ${COUNTRY[q.other]} (${dec(q.ref)} €/L)`
+    : `Paga mais <b>${eur.format(-q.saved)}</b> do que em ${COUNTRY[q.other]} (${dec(q.ref)} €/L)`;
+}
+
+function openFill(station) {
+  const last = store.get(LAST_FILL_KEY) || { src: 'l', value: 40 };
+  fill = { station, src: last.src };
+  els.fillTitle.innerHTML = `<b>${esc(station.name)}</b> <span>${esc(station.town)}</span>`;
+  els.fillP.value = dec(station.price);
+  els.fillL.value = els.fillE.value = '';
+  (last.src === 'l' ? els.fillL : els.fillE).value = plain(last.value);
+  renderQuote();
+  openDlg(els.fillDlg);
+}
+
+els.fillL.addEventListener('input', () => { fill.src = 'l'; renderQuote(); });
+els.fillE.addEventListener('input', () => { fill.src = 'e'; renderQuote(); });
+els.fillP.addEventListener('input', renderQuote);
+
+els.fillForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const q = quote();
+  if (!q.ok) return;
+  const f = {
+    id: Date.now().toString(36), at: Date.now(),
+    stationId: q.s.id, station: q.s.name, town: q.s.town, country: q.s.country,
+    litres: +q.litres.toFixed(2), amount: +q.amount.toFixed(2), paid: q.paid,
+    pricePT: q.s.country === 'PT' ? q.paid : q.ref,
+    priceES: q.s.country === 'ES' ? q.paid : q.ref,
+    saved: q.saved,
+  };
+  fills.push(f);
+  saveFills();
+  store.set(LAST_FILL_KEY, { src: fill.src, value: fill.src === 'l' ? f.litres : f.amount });
+  navigator.storage?.persist?.(); // ask the browser not to evict this data
+  els.fillDlg.close(); // close now so the toast lands on the page, not in the closing dialog
+  history.back();
+  toast('Abastecimento registado', () => { fills = fills.filter((x) => x.id !== f.id); saveFills(); });
+});
+
+function totals() {
+  const known = fills.filter((f) => f.saved != null);
+  return {
+    n: fills.length,
+    known: known.length,
+    saved: known.reduce((a, f) => a + f.saved, 0),
+    litres: fills.reduce((a, f) => a + f.litres, 0),
+  };
+}
+
+function renderSaved() {
+  const t = totals();
+  els.saved.hidden = !t.n;
+  if (!t.n) return;
+  els.saved.classList.toggle('is-neg', t.saved < 0);
+  els.saved.innerHTML = `
+    <span>${t.saved >= 0 ? 'Já poupou' : 'Saldo'} <b>${eur.format(t.saved)}</b> em ${t.n} abastecimento${t.n > 1 ? 's' : ''}</span>
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/></svg>`;
+}
+
+function renderHistory() {
+  const t = totals();
+  els.histStats.innerHTML = `
+    <div class="stat ${t.saved < 0 ? 'stat--bad' : 'stat--good'}"><span>Poupado</span><b>${eur.format(t.saved)}</b><small>no total</small></div>
+    <div class="stat"><span>Litros</span><b>${plain(t.litres, 0)} L</b><small>em ${t.n} ${t.n > 1 ? 'vezes' : 'vez'}</small></div>
+    <div class="stat"><span>Média</span><b>${t.known ? eur.format(t.saved / t.known) : '—'}</b><small>por vez</small></div>`;
+  const price = (f, cc) => (f[`price${cc}`] == null ? '—'
+    : `<span class="${f.country === cc ? 'paid' : ''}">${dec(f[`price${cc}`])}</span>`);
+  els.histRows.innerHTML = [...fills].reverse().map((f) => `
+    <tr>
+      <td class="fills__st"><b><i class="flag flag--${f.country.toLowerCase()}"></i> ${esc(f.station)}</b><small>${fillDate(f.at)}</small></td>
+      <td class="n">${plain(f.litres)}</td>
+      <td class="n">${price(f, 'PT')}</td>
+      <td class="n">${price(f, 'ES')}</td>
+      <td class="n ${f.saved == null ? '' : f.saved < 0 ? 'neg' : 'pos'}">${f.saved == null ? '—' : eur.format(f.saved)}</td>
+      <td><button type="button" class="del" data-id="${f.id}" aria-label="Apagar abastecimento de ${fmtFill.format(f.at)}">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+      </button></td>
+    </tr>`).join('');
+  els.histTable.hidden = !t.n;
+  els.histEmpty.hidden = !!t.n;
+  els.histHint.hidden = !IS_APPLE || STANDALONE;
+}
+
+els.histRows.addEventListener('click', (e) => {
+  const b = e.target.closest('.del');
+  if (!b) return;
+  const f = fills.find((x) => x.id === b.dataset.id);
+  fills = fills.filter((x) => x !== f);
+  saveFills();
+  toast('Abastecimento apagado', () => { fills.push(f); saveFills(); });
+});
+
+// Semicolons and decimal commas, so it opens straight into Excel / Numbers in PT and ES locales.
+function exportCsv() {
+  const cell = (v) => (v == null ? '' : typeof v === 'number' ? String(v).replace('.', ',')
+    : /[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const head = ['data', 'posto', 'localidade', 'pais', 'litros', 'valor_eur', 'preco_pago', 'preco_pt', 'preco_es', 'poupanca_eur'];
+  const rows = fills.map((f) => [
+    new Date(f.at).toLocaleString('sv-SE').slice(0, 16), // local "2026-10-03 14:20"
+    f.station, f.town, f.country, f.litres, f.amount, f.paid, f.pricePT, f.priceES, f.saved,
+  ].map(cell).join(';'));
+  const blob = new Blob(['\ufeff' + [head.join(';'), ...rows].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `gasoleo-raia-${new Date().toLocaleDateString('sv-SE')}.csv`,
+  });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+els.histCsv.addEventListener('click', exportCsv);
+
+els.saved.addEventListener('click', () => { renderHistory(); openDlg(els.histDlg); });
+renderSaved();
 
 /* ---------- wiring ---------- */
 

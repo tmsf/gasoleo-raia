@@ -8,6 +8,9 @@ Preços do gasóleo entre Tui (ES) e Caminha (PT), do mais barato ao mais caro. 
 
 O browser guarda as respostas em localStorage durante 30 min, o que dá, no máximo, cerca de 5 pedidos por visita.
 
+## Abastecimentos
+O botão **Abasteci** de cada posto regista um abastecimento (litros ou valor, um calcula o outro) com o preço pago e o preço do posto mais barato do outro lado da fronteira nesse momento. A poupança é a diferença multiplicada pelos litros. O histórico fica só no localStorage do browser (`diesel-raia:fills`), sem servidor, e pode ser exportado em CSV.
+
 ## Correr localmente
     python3 -m http.server 8000   # depois abrir http://localhost:8000
 
